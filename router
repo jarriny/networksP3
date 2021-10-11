@@ -40,6 +40,38 @@ PEER = "peer"
 PROV = "prov"
 
 
+class updateMes:
+    src = None
+    dst = None
+    #typ = "update"
+    network = None
+    netmask = None
+    localpref = None
+    selfOrigin = None
+    ASPath = None
+    origin = None
+
+    def __init__(self, s, d, netw, netm, lp, so, asp, ori):
+        self.src = s
+        self.dst = d
+        self.network = netw
+        self.netmask = netm
+        self.localpref = lp
+        self.selfOrigin = so
+        self.ASPath = asp
+        self.origin = ori
+
+
+class tableEntry:
+    ntwork = None
+    ntmask = None
+    peer = None
+
+    def __init__(self, ntw, ntm, p):
+        self.ntwork = ntw
+        self.ntmask = ntm
+        sekf.peer = p
+
 ##########################################################################################
 
 class Router:
@@ -48,12 +80,14 @@ class Router:
     updates = None
     relations = None
     sockets = None
+    table = None
 
     def __init__(self, networks):
         self.routes = []
         self.updates = []
         self.relations = {}
         self.sockets = {}
+        self.table = []
         for relationship in networks:
             network, relation = relationship.split("-")
             if DEBUG: 
@@ -132,7 +166,28 @@ class Router:
 
     def update(self, srcif, packet):
         """	handle update packets	"""
-        # TODO 
+        # TODO
+        m = json.loads(packet)
+        src = m[SRCE]
+        dst = m[DEST]
+        typ = m[TYPE]
+
+        msg = m[MESG]
+        f = json.loads(msg)
+        ntwork = f[NTWK]
+        ntmask = f[NMSK]
+        origin = f[ORIG]
+        lp = f[LPRF]
+        aspath = f[APTH]
+        sOrigin = f[SORG]
+        
+        upMes = updateMes(src, dst, ntwork, ntmask, origin, lp, aspath, sOrigin)
+        updates.add[upMes]
+        #saved an instance of the message
+
+        #adding new instance to table
+        t = tableEntry(ntwork, ntmask, src)
+        table.add[t]
         return False
     
     def revoke(self, packet):
@@ -148,7 +203,18 @@ class Router:
     def handle_packet(self, srcif, packet):
         """	dispatches a packet """
         # TODO
-        return False
+        m = json.loads(packet)
+        t = m["type"]
+        if t = DATA:
+            return forward(srcif, packet)
+        elif t = DUMP:
+            return dump(packet)
+        elif t = UPDT:
+            return update(srcif, packet)
+        elif t = RVKE:
+            return revoke(packet)
+        else:
+            return False
 
     def send_error(self, conn, msg):
         """ Send a no_route error message """
