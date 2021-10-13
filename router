@@ -70,7 +70,7 @@ class tableEntry:
     def __init__(self, ntw, ntm, p):
         self.ntwork = ntw
         self.ntmask = ntm
-        sekf.peer = p
+        self.peer = p
 
 ##########################################################################################
 
@@ -167,13 +167,15 @@ class Router:
     def update(self, srcif, packet):
         """	handle update packets	"""
         # TODO
-        m = json.loads(packet)
+        m1 = json.dumps(packet)
+        m = json.loads(m1)
         src = m[SRCE]
         dst = m[DEST]
         typ = m[TYPE]
 
         msg = m[MESG]
-        f = json.loads(msg)
+        f1 = json.dumps(msg)
+        f = json.loads(f1)
         ntwork = f[NTWK]
         ntmask = f[NMSK]
         origin = f[ORIG]
@@ -182,13 +184,13 @@ class Router:
         sOrigin = f[SORG]
         
         upMes = updateMes(src, dst, ntwork, ntmask, origin, lp, aspath, sOrigin)
-        updates.add[upMes]
+        self.updates.append(upMes)
         #saved an instance of the message
 
         #adding new instance to table
         t = tableEntry(ntwork, ntmask, src)
-        table.add[t]
-        return False
+        self.table.append(t)
+        return True
     
     def revoke(self, packet):
         """	handle revoke packets	"""
@@ -203,16 +205,18 @@ class Router:
     def handle_packet(self, srcif, packet):
         """	dispatches a packet """
         # TODO
-        m = json.loads(packet)
+        m1 = json.dumps(packet)
+        m = json.loads(m1)
+        #m = m.replace("\'", "\"")
         t = m["type"]
-        if t = DATA:
-            return forward(srcif, packet)
-        elif t = DUMP:
-            return dump(packet)
-        elif t = UPDT:
-            return update(srcif, packet)
-        elif t = RVKE:
-            return revoke(packet)
+        if t == DATA:
+            return self.forward(srcif, packet)
+        elif t == DUMP:
+            return self.dump(packet)
+        elif t == UPDT:
+            return self.update(srcif, packet)
+        elif t == RVKE:
+            return self.revoke(packet)
         else:
             return False
 
