@@ -81,18 +81,25 @@ class Router:
     relations = None
     sockets = None
     table = None
+    socketReal = None
+    asp = None
 
-    def __init__(self, networks):
+    def __init__(self, networks, asn):
         self.routes = []
         self.updates = []
         self.relations = {}
         self.sockets = {}
+        self.socketsReal = []
         self.table = []
+        self.asp = asn
+        #print("self asp: " + self.asp)
         for relationship in networks:
             network, relation = relationship.split("-")
             if DEBUG: 
                 print("Starting socket for", network, relation)
-            self.sockets[network] = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+            self.socketsReal.append(sock)
+            self.sockets[network] = sock#socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
             self.sockets[network].setblocking(0)
             self.sockets[network].connect(network)
             self.relations[network] = relation
@@ -157,7 +164,25 @@ class Router:
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
         # TODO
-        return False
+        m1 = json.dumps(packet)
+        #m = json.loads(m1)
+        for sock in self.sockets:
+            print(sock) 
+        socks = self.socketsReal #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+        print(len(socks))
+        for s in socks:
+            #print("scrif: " + srcif + "socket: " + s)
+            for sock in self.sockets:
+                        if self.sockets[sock] == s:
+                            print("srcif: " + srcif + "sock: " + sock)
+                            #s.sendall(bytes(m1, 'utf-8'))
+                            
+                            if sock != srcif:
+                                s.sendall(bytes(m1, 'utf-8'))
+                            else:
+                                print("stopped from being sent" + "srcif: " + srcif + "sock: " + sock)
+        #send out the packet which is the message we just recieved
+        return True
 
     def coalesce(self):
         """	coalesce any routes that are right next to each other	"""
@@ -190,6 +215,43 @@ class Router:
         #adding new instance to table
         t = tableEntry(ntwork, ntmask, src)
         self.table.append(t)
+        #for x in self.table:
+            #print("ntwork: " + x.ntwork + "ntmask: " + x.ntmask + "peer: " + x.peer)
+        
+        #m2 = json.dumps(packet)
+        #m = json.loads(m1)
+        for sock in self.sockets:
+            print(sock)
+        socks = self.socketsReal #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+        print(len(socks))
+        editedMes = m
+        oldASP = msg['ASPath']
+        print(type(oldASP))
+        #editedMes['src'] = m['dst']
+        
+        for s in socks:
+            #print("scrif: " + srcif + "socket: " + s)
+            for sock in self.sockets:
+                        if self.sockets[sock] == s:
+                            print("srcif: " + srcif + "sock: " + sock)
+                            #s.sendall(bytes(m1, 'utf-8'))
+
+                            if sock != srcif:
+                                editedMes['dst'] = sock
+                                z = [self.asp]
+                                #for x in oldASP:
+                                z = z + oldASP
+                                msg['ASPath'] = z
+                                print("z: ",z)
+                                newDST = editedMes['dst']
+                                editedMes['src'] = newDST[0:len(newDST) - 1] + "1" 
+                                editedMes['msg'] = msg
+                                eMes = json.dumps(editedMes)
+                                print("sending message: " + eMes)
+                                s.sendall(bytes(eMes, 'utf-8')) #was m1
+                            else:
+                                print("stopped from being sent" + "srcif: " + srcif + "sock: " + sock)
+        #send out the packet which is the message we just recieved
         return True
     
     def revoke(self, packet):
@@ -228,6 +290,8 @@ class Router:
     def run(self):
         while True:
             socks = select.select(self.sockets.values(), [], [], 0.1)[0]
+            #print("len socks: ")
+            #print( len(socks))
             for conn in socks:
                 try:
                     k = conn.recv(65535)
@@ -244,11 +308,12 @@ class Router:
                         self.send_error(conn, msg)
                 else:
                     return
+        #now start sending everything
         return
 
 
 
 if __name__ == "__main__":
-    router = Router(args.networks)
+    router = Router(args.networks, args.asn)
     router.run()
     
