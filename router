@@ -41,6 +41,7 @@ PROV = "prov"
 
 
 class updateMes:
+    srcif = None
     src = None
     dst = None
     #typ = "update"
@@ -50,8 +51,11 @@ class updateMes:
     selfOrigin = None
     ASPath = None
     origin = None
+    packet = None
 
-    def __init__(self, s, d, netw, netm, lp, so, asp, ori):
+    def __init__(self, srcif, packet, s, d, netw, netm, lp, so, asp, ori):
+        self.srcif = srcif
+        self.packet = packet
         self.src = s
         self.dst = d
         self.network = netw
@@ -189,6 +193,49 @@ class Router:
         # TODO (this is the most difficult task, save until last)
         return False
 
+    def sendUpdates(self, upMes):
+        #have to fix bc packet is actually an isntance of updateMes
+        #which is a bunch of fields not json
+        #but srcif is within packet which is good atleast
+        #I pushed the last sorking version before I started this
+        packet = upMes.packet
+        srcif = upMes.srcif
+        m1 = json.dumps(packet)
+        m = json.loads(m1)
+        for sock in self.sockets:
+            print(sock)
+        socks = self.socketsReal #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+        print(len(socks))
+        editedMes = m
+        msg = m[MESG]
+        oldASP = msg['ASPath']
+        print(type(oldASP))
+        #editedMes['src'] = m['dst']
+
+        for s in socks:
+            #print("scrif: " + srcif + "socket: " + s)
+            for sock in self.sockets:
+                        if self.sockets[sock] == s:
+                            print("srcif: " + srcif + "sock: " + sock)
+                            #s.sendall(bytes(m1, 'utf-8'))
+
+                            if sock != srcif:
+                                editedMes['dst'] = sock
+                                z = [self.asp]
+                                #for x in oldASP:
+                                z = oldASP + z
+                                msg['ASPath'] = z
+                                print("z: ",z)
+                                newDST = editedMes['dst']
+                                editedMes['src'] = newDST[0:len(newDST) - 1] + "1"
+                                editedMes['msg'] = msg
+                                eMes = json.dumps(editedMes)
+                                print("sending message: " + eMes)
+                                s.sendall(bytes(eMes, 'utf-8')) #was m1
+                            else:
+                                print("stopped from being sent" + "srcif: " + srcif + "sock: " + sock)
+        return True
+
     def update(self, srcif, packet):
         """	handle update packets	"""
         # TODO
@@ -208,7 +255,7 @@ class Router:
         aspath = f[APTH]
         sOrigin = f[SORG]
         
-        upMes = updateMes(src, dst, ntwork, ntmask, origin, lp, aspath, sOrigin)
+        upMes = updateMes(srcif, packet, src, dst, ntwork, ntmask, origin, lp, aspath, sOrigin)
         self.updates.append(upMes)
         #saved an instance of the message
 
@@ -220,7 +267,7 @@ class Router:
         
         #m2 = json.dumps(packet)
         #m = json.loads(m1)
-        for sock in self.sockets:
+        """for sock in self.sockets:
             print(sock)
         socks = self.socketsReal #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
         print(len(socks))
@@ -251,7 +298,7 @@ class Router:
                                 s.sendall(bytes(eMes, 'utf-8')) #was m1
                             else:
                                 print("stopped from being sent" + "srcif: " + srcif + "sock: " + sock)
-        #send out the packet which is the message we just recieved
+        #send out the packet which is the message we just recieved"""
         return True
     
     def revoke(self, packet):
@@ -259,9 +306,41 @@ class Router:
         # TODO
         return True
 
-    def dump(self, packet):
+    def dump(self, srcif, packet):
         """	handles dump table requests	"""
         # TODO
+        m1 = json.dumps(packet)
+        m = json.loads(m1)
+        msg = m[MESG]
+        msg = []
+        
+        msg2 = json.dumps(msg)
+        print(len(self.table))
+        x = 0
+        l = len(msg2)
+        msg2 = msg2[: l-1]
+        print("msg without }: " + msg2)
+        for t in self.table:
+            msg.append({"network":t.ntwork, "netmask": t.ntmask, "peer": t.peer})
+            print("below appending")
+            
+            #msg.update(entry)
+        #print("msg using update: " + json.dumps(msg))               
+        print("message sending: " + msg)
+        #msg3 = json.loads(msg2)
+        m[MESG] = msg # to add the actual part make it msg2 but then it doesn't work and is werid
+        print("got here")
+        socks = self.socketsReal 
+        for s in socks:
+            
+            for sock in self.sockets:
+                        if self.sockets[sock] == s:
+                            print("got here2")
+                            if sock == srcif:
+                                print("should get here once")
+                                mes = json.dumps(m)
+                                print("full dump message: " + mes)
+                                s.sendall(bytes(mes, 'utf-8'))
         return True
 
     def handle_packet(self, srcif, packet):
@@ -274,7 +353,7 @@ class Router:
         if t == DATA:
             return self.forward(srcif, packet)
         elif t == DUMP:
-            return self.dump(packet)
+            return self.dump(srcif, packet)
         elif t == UPDT:
             return self.update(srcif, packet)
         elif t == RVKE:
@@ -288,6 +367,7 @@ class Router:
         return
 
     def run(self):
+        lastUpdate = True
         while True:
             socks = select.select(self.sockets.values(), [], [], 0.1)[0]
             #print("len socks: ")
@@ -304,6 +384,17 @@ class Router:
                             srcif = sock
                     msg = json.loads(k)
                     print(msg)
+                    m1 = json.dumps(msg)
+                    m = json.loads(m1)
+                    t = m["type"]
+                    if lastUpdate and t != UPDT:
+                        #lsat one was update and now its not
+                        #so can send all of the update messages now
+                        lastUpdate = False
+                        print("can send update messages now")
+                        for x in self.updates:
+                            #what is the srcif I'm sending?
+                            self.sendUpdates(x)
                     if not self.handle_packet(srcif, msg):
                         self.send_error(conn, msg)
                 else:
@@ -316,4 +407,3 @@ class Router:
 if __name__ == "__main__":
     router = Router(args.networks, args.asn)
     router.run()
-    
