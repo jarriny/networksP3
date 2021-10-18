@@ -70,11 +70,19 @@ class tableEntry:
     ntwork = None
     ntmask = None
     peer = None
+    localpref = None
+    selfOrigin = None
+    ASPath = None
+    origin = None
 
-    def __init__(self, ntw, ntm, p):
+    def __init__(self, ntw, ntm, p, lp, so, asp, o):
         self.ntwork = ntw
         self.ntmask = ntm
         self.peer = p
+        self.localpref = lp
+        self.selfOrigin = so
+        self.ASPath = asp
+        self.origin = o
 
 ##########################################################################################
 
@@ -87,6 +95,7 @@ class Router:
     table = None
     socketReal = None
     asp = None
+    netw = None
 
     def __init__(self, networks, asn):
         self.routes = []
@@ -96,6 +105,7 @@ class Router:
         self.socketsReal = []
         self.table = []
         self.asp = asn
+        self.netw = []
         #print("self asp: " + self.asp)
         for relationship in networks:
             network, relation = relationship.split("-")
@@ -107,63 +117,167 @@ class Router:
             self.sockets[network].setblocking(0)
             self.sockets[network].connect(network)
             self.relations[network] = relation
+            self.netw.append(network)
         return
 
     def lookup_routes(self, daddr):
         """ Lookup all valid routes for an address """
         # TODO
         outroutes = []
+        addrParts = daddr.split(".")
+        print("address: daddr: " + daddr)
+        for t in self.table:
+            net = t.ntwork
+            src = t.peer
+            tableParts = net.split(".")
+            print("table address: " + net)
+            print("source address: " + src)
+            add = True
+            x = 0
+            
+            while x < len(addrParts):
+                
+                if addrParts[x] == tableParts[x] or tableParts[x] == "0":
+                    add = add and True
+                else:
+                    add = False
+                x = x + 1
+            
+            if add:
+                outroutes.append(t)
+            	
+        
         return outroutes
 
     def get_shortest_as_path(self, routes):
         """ select the route with the shortest AS Path """
         # TODO
         outroutes = []
+        #print("route type", type(routes))
+        shortest = routes[0]
+        tied = []
+        for r in routes:
+            path = r.ASPath
+            if path < shortest.ASPath:
+                highest = r
+                tied = []
+            elif path == shortest.ASPath and r != shortest:
+                tied.append(r)
+        outroutes = tied
+        outroutes.append(shortest)
         return outroutes
             
     def get_highest_preference(self, routes):
-        """ select the route with the shortest AS Path """
+        """ select the route with the highest localpref """
         # TODO
         outroutes = []
+        highest = routes[0]
+        tied = []
+        for r in routes:
+            pref = r.localpref
+            if pref > highest.localpref:
+                highest = r
+                tied = []
+            elif pref == highest.localpref and r != highest:
+                tied.append(r)
+        outroutes = tied
+        outroutes.append(highest)
         return outroutes
          
     def get_self_origin(self, routes):
         """ select self originating routes """
         # TODO
         outroutes = []
+        t = []
+        for r in routes:
+            if r.selfOrigin:
+                t.append(r)
+        if len(t) == 0:
+            outroutes = routes
+        else:
+            outroutes = t
         return outroutes
 
     def get_origin_routes(self, routes):
         """ select origin routes: IGP > EGP > UNK """
         # TODO
         outroutes = []
+        igp = []
+        egp = []
+        unk = []
+        for r in routes:
+            if r.origin == "IGP":
+                igp.append(r)
+            elif r.origin == "EGP":
+                egp.append(r)
+            elif r.origin == "UNK":
+                unk.append(r)
+        if len(igp) != 0:
+            outroutes = igp
+        elif len(egp) != 0:
+            outroutes = egp
+        else:
+            outroutes = unk
         return outroutes
 
     def filter_relationships(self, srcif, routes):
         """ Don't allow Peer->Peer, Peer->Prov, or Prov->Peer forwards """
         outroutes = []
+        
+        socks = self.socketsReal
+        #for n in self.netw:
+        for s in socks:
+            for n in self.netw: #new   
+                for sock in self.sockets:
+                    if self.sockets[n] == s:
+                        if n == srcif:
+                            relation1 = self.relations[n]
+             
+        print("GOT HERE ATLEAST: len or routes" + str(len(routes)))
+        print("relation1: " + relation1)
+        for r in routes:
+            
+            #for n in self.netw:
+                for s in socks:
+                    for n in self.netw: #for sock in self.sockets:
+                        if self.sockets[n] == s: #used to take sock
+                            if n == r.peer:
+                                relation2 = self.relations[n]
+                                print("relation1 and 2: " + relation1 + relation2)
+                                condition1 = relation1 == "peer" and relation2 == "peer"
+                                condition2 = relation1 == "peer" and relation2 == "prov"
+                                condition3 = relation1 == "prov" and realtion2 == "peer"
+                                if (not condition1) and (not condition2) and (not condition3):
+                                    outroutes.append(r)
+                
+
         return outroutes
 
     def get_route(self, srcif, daddr):
         """	Select the best route for a given address	"""
         # TODO
         peer = None
-        routes = lookup_routers(daddr)
+        print("before 0")
+        routes = self.lookup_routes(daddr)
         # Rules go here
         if routes:
-            # 1. Highest Preference
+            print("before1: " + str(len(routes)))#i 1. Highest Preference
             routes = self.get_highest_preference(routes)
-            # 2. Self Origin
+            print("before2" + str(len(routes)))# 2. Self Origin
             routes = self.get_self_origin(routes)
-            # 3. Shortest ASPath
+            print("before3" + str(len(routes))) # 3. Shortest ASPath
             routes = self.get_shortest_as_path(routes)
-            # 4. IGP > EGP > UNK
+            print("before4" + str(len(routes))) # 4. IGP > EGP > UNK
             routes = self.get_origin_routes(routes)
             # 5. Lowest IP Address
             # TODO
-            # Final check: enforce peering relationships
+            print("before5" + str(len(routes))) # Final check: enforce peering relationships
             routes = self.filter_relationships(srcif, routes)
-        return self.sockets[peer] if peer else None
+            print("after5" + str(len(routes)))
+        if len(routes) > 0:
+            peer = routes[0].peer
+            print("peer network: " + peer)
+        return peer if peer else None #self.sockets[peer] if peer else None
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
@@ -174,49 +288,44 @@ class Router:
         m1 = json.dumps(packet)
         m = json.loads(m1)
         
-        socks = self.socketsReal 
-        print("before search for destination")
-        sendto = []
+        socks = self.socketsReal
+        
+        
         net = m['dst']
-        l = len(net)
+        print("before we get the route")
+        sendto = self.get_route(srcif, net)
+
+        """l = len(net)
         net = net[:l-3 ]
-        print("got here 7")
+        
         for t in self.table:
             print("1: table network: " + t.ntwork + "network given: " + net)
             l2 = len(t.ntwork)
             if t.ntwork[: l2-2] == net:
                 print("table network: " + t.ntwork + "network given: " + net)
                 sendto.append(t.peer)
-        #print("sending data, net: " + net + "sendto: " + sendto[0])        
-
-        for s in socks:
-
-            for sock in self.sockets:
-                        if self.sockets[sock] == s:
-
-                            if sock != srcif and sock == sendto[0]:
-                                
-                                eMes = json.dumps(m)
-                                s.sendall(bytes(eMes, 'utf-8'))
+        #print("sending data, net: " + net + "sendto: " + sendto[0]) """       
+        if sendto == None:
+             for s in socks:
+                 for sock in self.sockets:
+                     if self.sockets[sock] == s:        
+                         m['msg'] = {}
+                         m['type'] = "no route"
+                         m['dst'] = m['src']
+                         m['src'] = sock[0:len(sock) - 1] + "1"
+                         eMes = json.dumps(m)
+                         s.sendall(bytes(eMes, 'utf-8'))
+        else:                 
+            for s in socks:
+                for sock in self.sockets:
+                    if self.sockets[sock] == s:
+                        print("types of sock and sendto" + sock + " " + sendto)
+                        if sock == sendto: #changes
+                            print("before sending data")
+                            eMes = json.dumps(m)
+                            s.sendall(bytes(eMes, 'utf-8'))
+                            #return True
         
-        """m1 = json.dumps(packet)
-        #m = json.loads(m1)
-        for sock in self.sockets:
-            print(sock) 
-        socks = self.socketsReal #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-        print(len(socks))
-        for s in socks:
-            #print("scrif: " + srcif + "socket: " + s)
-            for sock in self.sockets:
-                        if self.sockets[sock] == s:
-                            print("srcif: " + srcif + "sock: " + sock)
-                            #s.sendall(bytes(m1, 'utf-8'))
-                            
-                            if sock != srcif:
-                                s.sendall(bytes(m1, 'utf-8'))
-                            else:
-                                print("stopped from being sent" + "srcif: " + srcif + "sock: " + sock)
-        #send out the packet which is the message we just recieved"""
         return True
 
     def coalesce(self):
@@ -284,7 +393,7 @@ class Router:
         #saved an instance of the message
 
         #adding new instance to table
-        t = tableEntry(ntwork, ntmask, src)
+        t = tableEntry(ntwork, ntmask, src, lp, sOrigin, aspath, origin)
         self.table.append(t)
         return True
     
