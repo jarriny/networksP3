@@ -65,6 +65,17 @@ class updateMes:
         self.ASPath = asp
         self.origin = ori
 
+class revokeMes:
+    src = None
+    dst = None
+    networks = None
+    netmasks = None
+
+    def __init__(self, src, dst, networks, netmasks):
+        self.src = src
+        self.dst = dst
+        self.networks = networks
+        self.netmasks = netmasks
 
 class tableEntry:
     ntwork = None
@@ -96,6 +107,7 @@ class Router:
     socketReal = None
     asp = None
     netw = None
+    revokes = None
 
     def __init__(self, networks, asn):
         self.routes = []
@@ -106,6 +118,7 @@ class Router:
         self.table = []
         self.asp = asn
         self.netw = []
+        self.revokes = []
         #print("self asp: " + self.asp)
         for relationship in networks:
             network, relation = relationship.split("-")
@@ -125,13 +138,12 @@ class Router:
         # TODO
         outroutes = []
         addrParts = daddr.split(".")
-        print("address: daddr: " + daddr)
+        
         for t in self.table:
             net = t.ntwork
             src = t.peer
             tableParts = net.split(".")
-            print("table address: " + net)
-            print("source address: " + src)
+            
             add = True
             x = 0
             
@@ -233,8 +245,7 @@ class Router:
                         if n == srcif:
                             relation1 = self.relations[n]
              
-        print("GOT HERE ATLEAST: len or routes" + str(len(routes)))
-        print("relation1: " + relation1)
+        
         for r in routes:
             
             #for n in self.netw:
@@ -243,7 +254,7 @@ class Router:
                         if self.sockets[n] == s: #used to take sock
                             if n == r.peer:
                                 relation2 = self.relations[n]
-                                print("relation1 and 2: " + relation1 + relation2)
+                                
                                 condition1 = relation1 == "peer" and relation2 == "peer"
                                 condition2 = relation1 == "peer" and relation2 == "prov"
                                 condition3 = relation1 == "prov" and realtion2 == "peer"
@@ -257,26 +268,26 @@ class Router:
         """	Select the best route for a given address	"""
         # TODO
         peer = None
-        print("before 0")
+        
         routes = self.lookup_routes(daddr)
         # Rules go here
         if routes:
-            print("before1: " + str(len(routes)))#i 1. Highest Preference
+            #i 1. Highest Preference
             routes = self.get_highest_preference(routes)
-            print("before2" + str(len(routes)))# 2. Self Origin
+            # 2. Self Origin
             routes = self.get_self_origin(routes)
-            print("before3" + str(len(routes))) # 3. Shortest ASPath
+            # 3. Shortest ASPath
             routes = self.get_shortest_as_path(routes)
-            print("before4" + str(len(routes))) # 4. IGP > EGP > UNK
+            # 4. IGP > EGP > UNK
             routes = self.get_origin_routes(routes)
             # 5. Lowest IP Address
             # TODO
-            print("before5" + str(len(routes))) # Final check: enforce peering relationships
+            # Final check: enforce peering relationships
             routes = self.filter_relationships(srcif, routes)
-            print("after5" + str(len(routes)))
+            
         if len(routes) > 0:
             peer = routes[0].peer
-            print("peer network: " + peer)
+            
         return peer if peer else None #self.sockets[peer] if peer else None
 
     def forward(self, srcif, packet):
@@ -292,19 +303,10 @@ class Router:
         
         
         net = m['dst']
-        print("before we get the route")
+        
         sendto = self.get_route(srcif, net)
 
-        """l = len(net)
-        net = net[:l-3 ]
         
-        for t in self.table:
-            print("1: table network: " + t.ntwork + "network given: " + net)
-            l2 = len(t.ntwork)
-            if t.ntwork[: l2-2] == net:
-                print("table network: " + t.ntwork + "network given: " + net)
-                sendto.append(t.peer)
-        #print("sending data, net: " + net + "sendto: " + sendto[0]) """       
         if sendto == None:
              for s in socks:
                  for sock in self.sockets:
@@ -319,9 +321,9 @@ class Router:
             for s in socks:
                 for sock in self.sockets:
                     if self.sockets[sock] == s:
-                        print("types of sock and sendto" + sock + " " + sendto)
+                        
                         if sock == sendto: #changes
-                            print("before sending data")
+                            
                             eMes = json.dumps(m)
                             s.sendall(bytes(eMes, 'utf-8'))
                             #return True
@@ -344,7 +346,6 @@ class Router:
         m = json.loads(m1)
         
         socks = self.socketsReal #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-        
         editedMes = m
         msg = m[MESG]
         oldASP = msg['ASPath']
@@ -395,11 +396,69 @@ class Router:
         #adding new instance to table
         t = tableEntry(ntwork, ntmask, src, lp, sOrigin, aspath, origin)
         self.table.append(t)
+        
         return True
     
     def revoke(self, packet):
         """	handle revoke packets	"""
         # TODO
+        m1 = json.dumps(packet)
+        m = json.loads(m1)
+        src = m[SRCE]
+        dst = m[DEST]
+        typ = m[TYPE]
+
+        msg = m[MESG]
+        print("type of message: ", type(msg))
+        networks = []
+        netmasks = []
+        for n in msg:
+            n1 = json.dumps(n)
+            n2 = json.loads(n1)
+            netw = n2["network"]
+            netm = n2["netmask"]
+            networks.append(netw)
+            netmasks.append(netm)        
+
+        revMes = revokeMes(src, dst, networks, netmasks)
+        self.revokes.append(revMes)
+        toRemove = []
+        for t in self.table:
+            print("within table")
+            x = 0
+            while x < len(networks):
+                print("table network and mask: " + t.ntwork + " " + t.ntmask)
+                print("network and mask from list: " + networks[x] + " " + netmasks[x])
+                if t.ntwork == networks[x] and t.ntmask == netmasks[x] and t.peer == src:
+                    toRemove.append(t)
+                x = x + 1
+
+        for r in toRemove:
+            self.table.remove(r)
+        
+        #sending revoke message to neighbors
+        
+        srcif = src
+        
+        socks = self.socketsReal #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+        editedMes = m
+        
+
+        for s in socks:
+
+            for sock in self.sockets:
+                        if self.sockets[sock] == s:
+
+                            if sock != srcif:
+                                editedMes['dst'] = sock
+
+                                newDST = editedMes['dst']
+                                editedMes['src'] = newDST[0:len(newDST) - 1] + "1"
+                                
+                                eMes = json.dumps(editedMes)
+                                print("sending message: " + eMes)
+                                s.sendall(bytes(eMes, 'utf-8'))
+
         return True
 
     def dump(self, srcif, packet):
