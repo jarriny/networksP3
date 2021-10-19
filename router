@@ -257,7 +257,7 @@ class Router:
                                 
                                 condition1 = relation1 == "peer" and relation2 == "peer"
                                 condition2 = relation1 == "peer" and relation2 == "prov"
-                                condition3 = relation1 == "prov" and realtion2 == "peer"
+                                condition3 = relation1 == "prov" and relation2 == "peer"
                                 if (not condition1) and (not condition2) and (not condition3):
                                     outroutes.append(r)
                 
@@ -305,18 +305,35 @@ class Router:
         net = m['dst']
         
         sendto = self.get_route(srcif, net)
-
+        #print("SENDTO: " + sendto)
+        for s in socks:
+            for n in self.netw: #new   
+                for sock in self.sockets:
+                    if self.sockets[n] == s:
+                        if n == srcif:
+                            relation1 = self.relations[n]
+                        elif n == sendto:
+                            relation2 = self.relations[n]
         
-        if sendto == None:
+        canSend = False
+        if sendto != None and (relation1 == "cust" or relation2 == "cust"):
+            canSend = True
+            #print("relation1 and relation2: " + relation1 + " " +relation2)
+        
+
+        if sendto == None or canSend == False:
              for s in socks:
                  for sock in self.sockets:
-                     if self.sockets[sock] == s:        
-                         m['msg'] = {}
-                         m['type'] = "no route"
-                         m['dst'] = m['src']
-                         m['src'] = sock[0:len(sock) - 1] + "1"
-                         eMes = json.dumps(m)
-                         s.sendall(bytes(eMes, 'utf-8'))
+                     if self.sockets[sock] == s:
+                         if sock == srcif:        
+                             m['msg'] = {}
+                             m['type'] = "no route"
+                             oldSRC = m['src']
+                             #m['dst'] = oldSRC[0:len(oldSRC) -1] + "2"
+                             m['dst'] = oldSRC
+                             m['src'] = sock[0:len(sock) - 1] + "1"
+                             eMes = json.dumps(m)
+                             s.sendall(bytes(eMes, 'utf-8'))
         else:                 
             for s in socks:
                 for sock in self.sockets:
@@ -351,12 +368,27 @@ class Router:
         oldASP = msg['ASPath']
         
         for s in socks:
-            
-            for sock in self.sockets:
-                        if self.sockets[sock] == s:
+            for n in self.netw: #new   
+                
+                    if self.sockets[n] == s:
+                        if n == srcif:
+                            relation1 = self.relations[n]
+
+
+        for s in socks:
+            for n in self.netw:
+                        if self.sockets[n] == s:
+                            canSend = False
                             
-                            if sock != srcif:
-                                editedMes['dst'] = sock
+                            if relation1 == "cust":
+                                canSend = True
+                            else:
+                                #so it was sent by a peer or provider
+                                if self.relations[n] == "cust":
+                                   canSend = True
+                            
+                            if n != srcif and canSend:
+                                editedMes['dst'] = n
                                 z = [self.asp]
                                 
                                 z = oldASP + z
@@ -443,14 +475,28 @@ class Router:
         socks = self.socketsReal #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
         editedMes = m
         
+        for s in socks:
+            for n in self.netw: #new   
+                
+                    if self.sockets[n] == s:
+                        if n == srcif:
+                            relation1 = self.relations[n]        
 
         for s in socks:
+            for n in self.netw:
+                
+                        if self.sockets[n] == s:
+                            canSend = False
 
-            for sock in self.sockets:
-                        if self.sockets[sock] == s:
+                            if relation1 == "cust":
+                                canSend = True
+                            else:
+                                #so it was sent by a peer or provider
+                                if self.relations[n] == "cust":
+                                   canSend = True
 
-                            if sock != srcif:
-                                editedMes['dst'] = sock
+                            if n != srcif and canSend:
+                                editedMes['dst'] = n
 
                                 newDST = editedMes['dst']
                                 editedMes['src'] = newDST[0:len(newDST) - 1] + "1"
