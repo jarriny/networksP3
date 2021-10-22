@@ -146,19 +146,25 @@ class Router:
             
             add = True
             x = 0
-            
+            y = 0
+            soFar = True
+            print("addresses comparing from table: " + daddr + " " + net)
             while x < len(addrParts):
                 
-                if addrParts[x] == tableParts[x] or tableParts[x] == "0":
-                    add = add and True
+                if addrParts[x] == tableParts[x] or tableParts[x] == "0" or addrParts[x] == "0" and soFar:
+                    add = add and True #CHANGED TO OR@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                    y = y + 1
                 else:
                     add = False
+                    soFar = False
                 x = x + 1
             
-            if add:
+            if add or y > 0:
                 outroutes.append(t)
             	
-        
+        for r in outroutes:
+            print("networks: " + r.ntwork)
+        print("next func")
         return outroutes
 
     def get_shortest_as_path(self, routes):
@@ -177,6 +183,9 @@ class Router:
                 tied.append(r)
         outroutes = tied
         outroutes.append(shortest)
+        for r in outroutes:
+            print("networks: " + r.ntwork)
+        print("next func")
         return outroutes
             
     def get_highest_preference(self, routes):
@@ -194,6 +203,9 @@ class Router:
                 tied.append(r)
         outroutes = tied
         outroutes.append(highest)
+        for r in outroutes:
+            print("networks: " + r.ntwork)
+        print("next func")
         return outroutes
          
     def get_self_origin(self, routes):
@@ -208,6 +220,9 @@ class Router:
             outroutes = routes
         else:
             outroutes = t
+        for r in outroutes:
+            print("networks: " + r.ntwork)
+        print("next func")
         return outroutes
 
     def get_origin_routes(self, routes):
@@ -230,6 +245,9 @@ class Router:
             outroutes = egp
         else:
             outroutes = unk
+        for r in outroutes:
+            print("networks: " + r.ntwork)
+        print("next func")
         return outroutes
 
     def filter_relationships(self, srcif, routes):
@@ -261,7 +279,9 @@ class Router:
                                 if (not condition1) and (not condition2) and (not condition3):
                                     outroutes.append(r)
                 
-
+        for r in outroutes:
+            print("networks: " + r.ntwork)
+        print("next func")
         return outroutes
 
     def longestPrefix(self, srcif, routes, daddr):
@@ -296,6 +316,7 @@ class Router:
 
         for t in routes:
             net = t.ntwork
+            print("all the networks in table: " + str(net))
             src = t.peer
             tableParts = net.split(".")
             print("other routes: " + str(net))
@@ -319,6 +340,9 @@ class Router:
                 currentLongest.append(t)
         
         outroutes = currentLongest
+        for r in outroutes:
+            print("networks: " + r.ntwork)
+        print("next func")
         return outroutes
 
 
@@ -330,25 +354,32 @@ class Router:
         routes = self.lookup_routes(daddr)
         # Rules go here
         if routes:
+            print("length of routes0: " + str(len(routes)))
             routes = self.longestPrefix(srcif, routes, daddr)
             #i 1. Highest Preference
+            print("length of routes1: " + str(len(routes)))
             routes = self.get_highest_preference(routes)
             # 2. Self Origin
+            print("length of routes2: " + str(len(routes)))
             routes = self.get_self_origin(routes)
             # 3. Shortest ASPath
+            print("length of routes3: " + str(len(routes)))
             routes = self.get_shortest_as_path(routes)
             # 4. IGP > EGP > UNK
+            print("length of routes4: " + str(len(routes)))
             routes = self.get_origin_routes(routes)
             # 5. Lowest IP Address
             # TODO
             # Final check: enforce peering relationships
+            print("length of routes5: " + str(len(routes)))
             routes = self.filter_relationships(srcif, routes)
-           
+            print("length of routes6: " + str(len(routes)))
             #longest prefix matching 
             #routes = self.longestPrefix(srcif, routes, daddr)
+        print("LEN OR ROUTES: " + str(len(routes)))
         if len(routes) > 0:
             peer = routes[0].peer
-            
+        #print("peer: " + str(peer.ntwork))    
         return peer if peer else None #self.sockets[peer] if peer else None
 
     def forward(self, srcif, packet):
@@ -384,7 +415,7 @@ class Router:
             canSend = True
             #print("relation1 and relation2: " + relation1 + " " +relation2)
         
-
+        print("sendto: " + str(sendto))
         if sendto == None or canSend == False:
              for s in socks:
                  for sock in self.sockets:
@@ -411,10 +442,98 @@ class Router:
         
         return True
 
+    def aggNetmask(self, mask):
+        newMask = ""
+        if mask == "255":
+            newMask = 254
+        elif mask == "254":
+            newMask = 252
+        elif mask == "252":
+            newMask = 248
+        return newMask
+
     def coalesce(self):
         """	coalesce any routes that are right next to each other	"""
         # TODO (this is the most difficult task, save until last)
-        return False
+        
+        for q in self.table: #range(0, len(self.table)):
+            net1 = q.ntwork
+            src1 = q.peer
+            qParts = net1.split(".")
+            for w in self.table: #range(0, len(self.table)):
+                if q != w:
+                    agg = False
+                    net2 = w.ntwork
+                    src2 = w.peer
+                    wParts = net2.split(".")
+                    print("q and w networks: " + q.ntwork + " " + w.ntwork)
+                    x = 0
+                    temp = 0
+                    soFar = True
+                    while x < len(qParts):
+
+                        if qParts[x] == wParts[x] and soFar:
+                            temp = temp + 1
+                        else:
+                            soFar = False
+                        x = x + 1
+                    print("temp: " + str(temp))
+                    if temp >= 2:
+                        peer = False
+                        netmask = False
+                        localpref = False
+                        ASPath = True
+                        origin = False
+                        selfOrigin = False
+                        
+                        if q.peer == w.peer:
+                            peer = True
+                        if q.ntmask == w.ntmask:
+                            netmask = True
+                        if q.localpref == w.localpref:
+                            localpref = True
+                        if len(q.ASPath) == len(w.ASPath):
+                            for r in range(0, len(q.ASPath)):
+                                if q.ASPath[r] == w.ASPath[r]:
+                                    ASPath = ASPath and True
+                                else:
+                                    ASPath = False
+                        if q.selfOrigin == w.selfOrigin:
+                            selfOrigin = True
+                        if q.origin == w.origin:
+                            origin = True
+                        if peer and netmask and localpref and ASPath and origin and selfOrigin:
+                            agg = True
+                    if agg:
+                        final = []
+                        for qp in qParts:
+                            if temp > 0:
+                                final.append(qp)
+                                temp = temp - 1
+                        if int(qParts[2]) < int(wParts[2]):
+                            final.append(qParts[2])
+                        else:
+                            final.apend(wParts[2])
+                        while len(final) < 4:
+                            final.append(str(0))
+                        aggedList = ".".join(final)
+                        q.ntwork = aggedList
+                        mask = q.ntmask.split(".")
+                        masktoEdit = mask[2]
+                        maskEdited = self.aggNetmask(masktoEdit)
+                        
+                        newMask = str(mask[0]) + "." + str(mask[1]) + "." + str(maskEdited) + "." + "0"
+                        print(newMask)
+                        q.ntmask = newMask
+                        self.table.remove(w)
+
+        return True
+
+    """def aggNetmask(self, mask):
+        newMask = ""
+        if mask == "255":
+            newMask = 254
+        return newMask"""
 
     def sendUpdates(self, upMes):
         #have to fix bc packet is actually an isntance of updateMes
@@ -619,7 +738,9 @@ class Router:
         elif t == DUMP:
             return self.dump(srcif, packet)
         elif t == UPDT:
-            return self.update(srcif, packet)
+            x = self.update(srcif, packet)
+            x = x and self.coalesce()
+            return x
         elif t == RVKE:
             return self.revoke(packet)
         else:
